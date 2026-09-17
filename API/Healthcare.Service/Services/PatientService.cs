@@ -1,6 +1,8 @@
 using Healthcare.DTOs.Patient;
 using Healthcare.Repository.Interfaces;
 using Healthcare.Service.Interfaces;
+using Microsoft.Extensions.Logging;
+
 namespace Healthcare.Service.Services;
 public class PatientService : IPatientService
 {

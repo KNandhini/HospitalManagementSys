@@ -1,5 +1,6 @@
 using System.Data;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 namespace Healthcare.Repository.DbConnection;
 
 public sealed class DbConnectionFactory
