@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Healthcare.API.Controllers;
 [ApiController, Route("api/[controller]")]
-[Authorize]
+//[Authorize]
 public class PatientController : ControllerBase
 {
     private readonly IPatientService _service;
