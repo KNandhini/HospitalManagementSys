@@ -1,10 +1,16 @@
 using Healthcare.DTOs.Patient;
+
 namespace Healthcare.Service.Interfaces;
+
 public interface IPatientService
 {
-    Task<PatientResponseDto?> GetByIdAsync(int id);
+    Task<PatientResponseDto?> GetByIdAsync(int patientId);
     Task<IEnumerable<PatientResponseDto>> GetAllAsync();
-    Task<int> CreateAsync(CreatePatientDto request);
-    Task<bool> UpdateAsync(int id, UpdatePatientDto request);
-    Task<bool> DeleteAsync(int id);
+
+    /// <summary>Throws ArgumentException if every field on the request is null.</summary>
+    Task<IEnumerable<PatientResponseDto>> SearchAsync(PatientSearchRequestDto request);
+
+    Task<PatientResponseDto> CreateAsync(CreatePatientDto request, string registeredBy);
+    Task<PatientResponseDto?> UpdateAsync(int patientId, UpdatePatientDto request, string actorUser);
+    Task<bool> DeleteAsync(int patientId, string actorUser);
 }
