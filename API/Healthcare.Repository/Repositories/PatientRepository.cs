@@ -153,7 +153,7 @@ public class PatientRepository : IPatientRepository
         }
     }
 
-    public async Task<int> UpdateAsync(int patientId, UpdatePatientDto dto, string actorUser)
+    public async Task<int> UpdateAsync(int patientId, UpdatePatientDto dto)
     {
         try
         {
@@ -163,7 +163,6 @@ public class PatientRepository : IPatientRepository
                 new
                 {
                     PatientId = patientId,
-                    ActorUser = actorUser,
                     dto.ReferringDoctor,
                     dto.FirstName,
                     dto.MiddleName,
@@ -213,14 +212,14 @@ public class PatientRepository : IPatientRepository
         }
     }
 
-    public async Task<bool> DeleteAsync(int patientId, string actorUser)
+    public async Task<bool> DeleteAsync(int patientId)
     {
         try
         {
             using var c = _db.CreateConnection();
             await c.ExecuteScalarAsync<int>(
                 PatientStoredProcedures.Delete,
-                new { PatientId = patientId, ActorUser = actorUser },
+                new { PatientId = patientId },
                 commandType: CommandType.StoredProcedure);
 
             _logger.LogInformation("{Procedure} succeeded — PatientId={PatientId} set to Inactive.",

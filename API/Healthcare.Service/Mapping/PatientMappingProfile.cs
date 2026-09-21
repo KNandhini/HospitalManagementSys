@@ -11,21 +11,28 @@ public class PatientMappingProfile : Profile
         // ── Create: incoming DTO -> entity ──
         CreateMap<CreatePatientDto, Patient>()
             .ForMember(d => d.PatientId, opt => opt.Ignore())
-            .ForMember(d => d.PatientNumber, opt => opt.Ignore())
-            .ForMember(d => d.CreatedAt, opt => opt.Ignore())
-            .ForMember(d => d.IsActive, opt => opt.MapFrom(_ => true));
+            .ForMember(d => d.PatientCode, opt => opt.Ignore())
+            .ForMember(d => d.RegistrationDate, opt => opt.Ignore())
+            .ForMember(d => d.RegisteredBy, opt => opt.Ignore())
+            .ForMember(d => d.CreatedDate, opt => opt.Ignore())
+            .ForMember(d => d.CreatedBy, opt => opt.Ignore())
+            .ForMember(d => d.ModifiedDate, opt => opt.Ignore())
+            .ForMember(d => d.ModifiedBy, opt => opt.Ignore())
+            .ForMember(d => d.Status, opt => opt.MapFrom(_ => "Active"));
 
         // ── Update: incoming DTO -> entity ──
         CreateMap<UpdatePatientDto, Patient>()
             .ForMember(d => d.PatientId, opt => opt.Ignore())
-            .ForMember(d => d.PatientNumber, opt => opt.Ignore())
-            .ForMember(d => d.CreatedAt, opt => opt.Ignore());
+            .ForMember(d => d.PatientCode, opt => opt.Ignore())
+            .ForMember(d => d.RegistrationDate, opt => opt.Ignore())
+            .ForMember(d => d.RegisteredBy, opt => opt.Ignore())
+            .ForMember(d => d.Status, opt => opt.Ignore())
+            .ForMember(d => d.CreatedDate, opt => opt.Ignore())
+            .ForMember(d => d.CreatedBy, opt => opt.Ignore())
+            .ForMember(d => d.ModifiedDate, opt => opt.Ignore())
+            .ForMember(d => d.ModifiedBy, opt => opt.Ignore());
 
         // ── Entity -> outgoing full response DTO ──
         CreateMap<Patient, PatientResponseDto>();
-
-        // ── Entity -> lightweight search result row ──
-        CreateMap<Patient, PatientSearchResultDto>()
-            .ForMember(d => d.FullName, opt => opt.MapFrom(s => $"{s.FirstName} {s.LastName}".Trim()));
     }
 }

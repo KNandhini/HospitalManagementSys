@@ -1,3 +1,4 @@
+
 using System.Diagnostics;
 using Healthcare.DTOs.Patient;
 using Healthcare.Service.Interfaces;
@@ -7,240 +8,404 @@ using Microsoft.Data.SqlClient;
 
 namespace Healthcare.API.Controllers;
 
-[ApiController, Route("api/[controller]"), Authorize]
+[ApiController]
+[Route("api/[controller]")]
 public class PatientController : ControllerBase
 {
-    /// <summary>sp_GetPatientDetails' custom error for "no filter criteria supplied".</summary>
     private const int NoSearchCriteriaSupplied = 50010;
 
     private readonly IPatientService _service;
     private readonly ILogger<PatientController> _logger;
 
-    public PatientController(IPatientService service, ILogger<PatientController> logger)
+    public PatientController(
+        IPatientService service,
+        ILogger<PatientController> logger)
     {
         _service = service;
         _logger = logger;
     }
 
-    /// <summary>
-    /// sp_InsertPatient/sp_UpdatePatient/sp_DeletePatient all require a
-    /// non-empty actor identity and THROW if it's missing - so this is
-    /// checked here, before ever calling the service, rather than letting
-    /// a null identity turn into a raw SQL error.
-    /// </summary>
-    private bool TryGetActorUser(out string actorUser, out IActionResult? error)
-    {
-        var name = User.Identity?.Name;
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            actorUser = "";
-            error = Unauthorized(new { success = false, message = "Authenticated user identity is required." });
-            return false;
-        }
-
-        actorUser = name;
-        error = null;
-        return true;
-    }
-
+    // ============================================================
+    // GET ALL PATIENTS
+    // ============================================================
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
         var sw = Stopwatch.StartNew();
-        _logger.LogInformation("API Request: GET /api/patient — TraceId={TraceId}", HttpContext.TraceIdentifier);
+
         try
         {
-            var result = await _service.GetAllAsync();
-            _logger.LogInformation(
-                "API Response: GET /api/patient — 200 OK, Count={Count}, ElapsedMs={ElapsedMs}, TraceId={TraceId}",
-                result.Count(), sw.ElapsedMilliseconds, HttpContext.TraceIdentifier);
-            return Ok(result);
+            var patients = await _service.GetAllAsync();
+
+            sw.Stop();
+
+            return Ok(new
+            {
+                success = true,
+                message = "Patients retrieved successfully.",
+                data = patients,
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
         }
         catch (SqlException ex)
         {
-            _logger.LogError(ex,
-                "API Error: GET /api/patient — database error, ElapsedMs={ElapsedMs}, TraceId={TraceId}",
-                sw.ElapsedMilliseconds, HttpContext.TraceIdentifier);
-            return StatusCode(500, new { success = false, message = "A database error occurred while retrieving patients." });
+            sw.Stop();
+
+            _logger.LogError(ex, "Error retrieving patients");
+
+            return StatusCode(500, new
+            {
+                success = false,
+                message = ex.Message,
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+
+            _logger.LogError(ex, "Unexpected error retrieving patients");
+
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "An unexpected error occurred.",
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
         }
     }
 
+    // ============================================================
+    // GET PATIENT BY ID
+    // ============================================================
     [HttpGet("{patientId:int}")]
     public async Task<IActionResult> GetById(int patientId)
     {
         var sw = Stopwatch.StartNew();
-        _logger.LogInformation(
-            "API Request: GET /api/patient/{PatientId} — TraceId={TraceId}", patientId, HttpContext.TraceIdentifier);
+
         try
         {
-            var result = await _service.GetByIdAsync(patientId);
-            if (result is null)
+            var patient = await _service.GetByIdAsync(patientId);
+
+            sw.Stop();
+
+            if (patient == null)
             {
-                _logger.LogWarning(
-                    "API Error: GET /api/patient/{PatientId} — 404 Not Found, ElapsedMs={ElapsedMs}, TraceId={TraceId}",
-                    patientId, sw.ElapsedMilliseconds, HttpContext.TraceIdentifier);
-                return NotFound(new { success = false, message = $"Patient {patientId} was not found." });
+                return NotFound(new
+                {
+                    success = false,
+                    message = "Patient not found.",
+                    executionTimeMs = sw.ElapsedMilliseconds
+                });
             }
 
-            _logger.LogInformation(
-                "API Response: GET /api/patient/{PatientId} — 200 OK, ElapsedMs={ElapsedMs}, TraceId={TraceId}",
-                patientId, sw.ElapsedMilliseconds, HttpContext.TraceIdentifier);
-            return Ok(result);
+            return Ok(new
+            {
+                success = true,
+                message = "Patient retrieved successfully.",
+                data = patient,
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
         }
         catch (SqlException ex)
         {
-            _logger.LogError(ex,
-                "API Error: GET /api/patient/{PatientId} — database error, ElapsedMs={ElapsedMs}, TraceId={TraceId}",
-                patientId, sw.ElapsedMilliseconds, HttpContext.TraceIdentifier);
-            return StatusCode(500, new { success = false, message = "A database error occurred while retrieving the patient." });
+            sw.Stop();
+
+            _logger.LogError(
+                ex,
+                "Error retrieving patient {PatientId}",
+                patientId);
+
+            return StatusCode(500, new
+            {
+                success = false,
+                message = ex.Message,
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+
+            _logger.LogError(
+                ex,
+                "Unexpected error retrieving patient {PatientId}",
+                patientId);
+
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "An unexpected error occurred.",
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
         }
     }
 
-    [HttpGet("search")]
-    public async Task<IActionResult> Search(
-        [FromQuery] int? patientId,
-        [FromQuery] string? firstName,
-        [FromQuery] string? lastName,
-        [FromQuery] DateTime? dateOfBirth,
-        [FromQuery] string? mobileNumber)
+    // ============================================================
+    // SEARCH PATIENTS
+    // ============================================================
+    [HttpPost("search")]
+    public async Task<IActionResult> Search(PatientSearchRequestDto request)
     {
         var sw = Stopwatch.StartNew();
-        var request = new PatientSearchRequestDto
-        {
-            PatientId = patientId,
-            FirstName = firstName,
-            LastName = lastName,
-            DateOfBirth = dateOfBirth,
-            MobileNumber = mobileNumber
-        };
 
-        _logger.LogInformation(
-            "API Request: GET /api/patient/search — TraceId={TraceId}", HttpContext.TraceIdentifier);
         try
         {
-            var result = await _service.SearchAsync(request);
-            _logger.LogInformation(
-                "API Response: GET /api/patient/search — 200 OK, Count={Count}, ElapsedMs={ElapsedMs}, TraceId={TraceId}",
-                result.Count(), sw.ElapsedMilliseconds, HttpContext.TraceIdentifier);
-            return Ok(result);
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(new { success = false, message = ex.Message });
+            var patients = await _service.SearchAsync(request);
+
+            sw.Stop();
+
+            return Ok(new
+            {
+                success = true,
+                message = "Patient search completed successfully.",
+                data = patients,
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
         }
         catch (SqlException ex) when (ex.Number == NoSearchCriteriaSupplied)
         {
-            return BadRequest(new { success = false, message = ex.Message });
+            sw.Stop();
+
+            return BadRequest(new
+            {
+                success = false,
+                message = "Please provide at least one search criteria.",
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
         }
         catch (SqlException ex)
         {
-            _logger.LogError(ex,
-                "API Error: GET /api/patient/search — database error, ElapsedMs={ElapsedMs}, TraceId={TraceId}",
-                sw.ElapsedMilliseconds, HttpContext.TraceIdentifier);
-            return StatusCode(500, new { success = false, message = "A database error occurred while searching patients." });
+            sw.Stop();
+
+            _logger.LogError(ex, "Error searching patients");
+
+            return StatusCode(500, new
+            {
+                success = false,
+                message = ex.Message,
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+
+            _logger.LogError(ex, "Unexpected error searching patients");
+
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "An unexpected error occurred.",
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
         }
     }
 
+    // ============================================================
+    // CREATE PATIENT
+    // ============================================================
     [HttpPost]
-    [Authorize(Roles = "Admin,Doctor")]
+    // [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Create(CreatePatientDto request)
     {
-        if (!TryGetActorUser(out var registeredBy, out var authError))
-            return authError!;
-
         var sw = Stopwatch.StartNew();
-        _logger.LogInformation(
-            "API Request: POST /api/patient — Name={FirstName} {LastName}, RegisteredBy={RegisteredBy}, TraceId={TraceId}",
-            request.FirstName, request.LastName, registeredBy, HttpContext.TraceIdentifier);
+
+        // Logged-in user only
+        var registeredBy = User.Identity?.Name;
 
         try
         {
-            var created = await _service.CreateAsync(request, registeredBy);
-            _logger.LogInformation(
-                "API Response: POST /api/patient — 201 Created, PatientId={PatientId}, PatientCode={PatientCode}, ElapsedMs={ElapsedMs}, TraceId={TraceId}",
-                created.PatientId, created.PatientCode, sw.ElapsedMilliseconds, HttpContext.TraceIdentifier);
-            return CreatedAtAction(nameof(GetById), new { patientId = created.PatientId }, created);
+            var created = await _service.CreateAsync(
+                request,
+                registeredBy);
+
+            sw.Stop();
+
+            return Ok(new
+            {
+                success = true,
+                message = "Patient created successfully.",
+                data = created,
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
         }
         catch (SqlException ex)
         {
-            _logger.LogError(ex,
-                "API Error: POST /api/patient — database error while creating patient. Name={FirstName} {LastName}, ElapsedMs={ElapsedMs}, TraceId={TraceId}",
-                request.FirstName, request.LastName, sw.ElapsedMilliseconds, HttpContext.TraceIdentifier);
-            return StatusCode(500, new { success = false, message = "A database error occurred while creating the patient." });
+            sw.Stop();
+
+            _logger.LogError(
+                ex,
+                "Error creating patient");
+
+            return StatusCode(500, new
+            {
+                success = false,
+                message = ex.Message,
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+
+            _logger.LogError(
+                ex,
+                "Unexpected error creating patient");
+
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "An unexpected error occurred.",
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
         }
     }
 
+    // ============================================================
+    // UPDATE PATIENT
+    // ============================================================
     [HttpPut("{patientId:int}")]
-    [Authorize(Roles = "Admin,Doctor")]
-    public async Task<IActionResult> Update(int patientId, UpdatePatientDto request)
+    // [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Update(
+        int patientId,
+        UpdatePatientDto request)
     {
-        if (!TryGetActorUser(out var actorUser, out var authError))
-            return authError!;
-
         var sw = Stopwatch.StartNew();
-        _logger.LogInformation(
-            "API Request: PUT /api/patient/{PatientId} — ActorUser={ActorUser}, TraceId={TraceId}",
-            patientId, actorUser, HttpContext.TraceIdentifier);
+
+        // Logged-in user only
+        var modifiedBy = User.Identity?.Name;
 
         try
         {
-            var updated = await _service.UpdateAsync(patientId, request, actorUser);
-            if (updated is null)
+            var updated = await _service.UpdateAsync(
+                patientId,
+                request
+       );
+
+            sw.Stop();
+
+            if (updated == null)
             {
-                _logger.LogWarning(
-                    "API Error: PUT /api/patient/{PatientId} — 404 Not Found, ElapsedMs={ElapsedMs}, TraceId={TraceId}",
-                    patientId, sw.ElapsedMilliseconds, HttpContext.TraceIdentifier);
-                return NotFound(new { success = false, message = $"Patient {patientId} was not found or is inactive." });
+                return NotFound(new
+                {
+                    success = false,
+                    message = "Patient not found.",
+                    executionTimeMs = sw.ElapsedMilliseconds
+                });
             }
 
-            _logger.LogInformation(
-                "API Response: PUT /api/patient/{PatientId} — 200 OK, ElapsedMs={ElapsedMs}, TraceId={TraceId}",
-                patientId, sw.ElapsedMilliseconds, HttpContext.TraceIdentifier);
-            return Ok(updated);
+            return Ok(new
+            {
+                success = true,
+                message = "Patient updated successfully.",
+                data = updated,
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
         }
         catch (SqlException ex)
         {
-            _logger.LogError(ex,
-                "API Error: PUT /api/patient/{PatientId} — database error, ElapsedMs={ElapsedMs}, TraceId={TraceId}",
-                patientId, sw.ElapsedMilliseconds, HttpContext.TraceIdentifier);
-            return StatusCode(500, new { success = false, message = "A database error occurred while updating the patient." });
+            sw.Stop();
+
+            _logger.LogError(
+                ex,
+                "Error updating patient {PatientId}",
+                patientId);
+
+            return StatusCode(500, new
+            {
+                success = false,
+                message = ex.Message,
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+
+            _logger.LogError(
+                ex,
+                "Unexpected error updating patient {PatientId}",
+                patientId);
+
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "An unexpected error occurred.",
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
         }
     }
 
+    // ============================================================
+    // DELETE PATIENT
+    // ============================================================
     [HttpDelete("{patientId:int}")]
-    [Authorize(Roles = "Admin")]
+    // [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Delete(int patientId)
     {
-        if (!TryGetActorUser(out var actorUser, out var authError))
-            return authError!;
-
         var sw = Stopwatch.StartNew();
-        _logger.LogInformation(
-            "API Request: DELETE /api/patient/{PatientId} — ActorUser={ActorUser}, TraceId={TraceId}",
-            patientId, actorUser, HttpContext.TraceIdentifier);
+
+        // Logged-in user only
+        var modifiedBy = User.Identity?.Name;
 
         try
         {
-            var deleted = await _service.DeleteAsync(patientId, actorUser);
+            var deleted = await _service.DeleteAsync(
+                patientId
+               );
+
+            sw.Stop();
+
             if (!deleted)
             {
-                _logger.LogWarning(
-                    "API Error: DELETE /api/patient/{PatientId} — 404 Not Found, ElapsedMs={ElapsedMs}, TraceId={TraceId}",
-                    patientId, sw.ElapsedMilliseconds, HttpContext.TraceIdentifier);
-                return NotFound(new { success = false, message = $"Patient {patientId} was not found or is already inactive." });
+                return NotFound(new
+                {
+                    success = false,
+                    message = "Patient not found.",
+                    executionTimeMs = sw.ElapsedMilliseconds
+                });
             }
 
-            _logger.LogInformation(
-                "API Response: DELETE /api/patient/{PatientId} — 204 No Content, ElapsedMs={ElapsedMs}, TraceId={TraceId}",
-                patientId, sw.ElapsedMilliseconds, HttpContext.TraceIdentifier);
-            return NoContent();
+            return Ok(new
+            {
+                success = true,
+                message = "Patient deleted successfully.",
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
         }
         catch (SqlException ex)
         {
-            _logger.LogError(ex,
-                "API Error: DELETE /api/patient/{PatientId} — database error, ElapsedMs={ElapsedMs}, TraceId={TraceId}",
-                patientId, sw.ElapsedMilliseconds, HttpContext.TraceIdentifier);
-            return StatusCode(500, new { success = false, message = "A database error occurred while deactivating the patient." });
+            sw.Stop();
+
+            _logger.LogError(
+                ex,
+                "Error deleting patient {PatientId}",
+                patientId);
+
+            return StatusCode(500, new
+            {
+                success = false,
+                message = ex.Message,
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+
+            _logger.LogError(
+                ex,
+                "Unexpected error deleting patient {PatientId}",
+                patientId);
+
+            return StatusCode(500, new
+            {
+                success = false,
+                message = "An unexpected error occurred.",
+                executionTimeMs = sw.ElapsedMilliseconds
+            });
         }
     }
 }
+

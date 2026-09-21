@@ -68,11 +68,11 @@ public class PatientService : IPatientService
         return ToDto(created);
     }
 
-    public async Task<PatientResponseDto?> UpdateAsync(int patientId, UpdatePatientDto request, string actorUser)
+    public async Task<PatientResponseDto?> UpdateAsync(int patientId, UpdatePatientDto request)
     {
         _logger.LogInformation("PatientService.UpdateAsync — starting update. PatientId={PatientId}", patientId);
 
-        var rowsAffected = await _repo.UpdateAsync(patientId, request, actorUser);
+        var rowsAffected = await _repo.UpdateAsync(patientId, request);
         if (rowsAffected == 0)
         {
             _logger.LogWarning("PatientService.UpdateAsync — PatientId={PatientId} not found or inactive", patientId);
@@ -83,10 +83,10 @@ public class PatientService : IPatientService
         return updated is null ? null : ToDto(updated);
     }
 
-    public Task<bool> DeleteAsync(int patientId, string actorUser)
+    public Task<bool> DeleteAsync(int patientId)
     {
         _logger.LogInformation("PatientService.DeleteAsync — deactivating PatientId={PatientId}", patientId);
-        return _repo.DeleteAsync(patientId, actorUser);
+        return _repo.DeleteAsync(patientId);
     }
 
     private static PatientResponseDto ToDto(Patient p) => new()

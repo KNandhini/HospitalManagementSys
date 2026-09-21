@@ -13,7 +13,7 @@ public interface IPatientRepository
     Task<(int PatientId, string PatientCode)> CreateAsync(CreatePatientDto dto, string registeredBy);
 
     /// <summary>Returns rows affected - 0 means no matching, active patient was found.</summary>
-    Task<int> UpdateAsync(int patientId, UpdatePatientDto dto, string actorUser);
+    Task<int> UpdateAsync(int patientId, UpdatePatientDto dto);
 
     /// <summary>
     /// Returns false if the patient didn't exist or was already inactive
@@ -21,5 +21,5 @@ public interface IPatientRepository
     /// catches it and translates it to a plain false rather than letting
     /// it surface as a generic SqlException).
     /// </summary>
-    Task<bool> DeleteAsync(int patientId, string actorUser);
+    Task<bool> DeleteAsync(int patientId);
 }
