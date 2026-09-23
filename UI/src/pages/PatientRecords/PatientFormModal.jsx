@@ -10,7 +10,8 @@ const PAYER_TYPES = ["SelfPay", "Insurance", "GovtScheme"];
 const STATUSES = ["Active", "Inactive", "Deceased"];
 
 const EMPTY_FORM = {
-  profilePhoto: "", // data URL (base64) of the uploaded/captured photo
+  profilePhoto: "", // data URL (base64) of the uploaded/captured photo — mapped
+                     // to/from the backend's `photoFilePath` field on load/save.
 
   firstName: "",
   middleName: "",
@@ -143,6 +144,19 @@ function formatDisplayDate(value) {
   if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
+/**
+ * Converts an ISO datetime string (or Date) to the "yyyy-MM-dd" format
+ * required by <input type="date">. Without this, dates from the API
+ * (which include a time component, e.g. "2000-09-01T00:00:00") render
+ * as blank in edit mode because the raw string doesn't match what the
+ * date input expects.
+ */
+function toDateInputValue(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
 
 export default function PatientFormModal({
   open,
@@ -171,6 +185,14 @@ export default function PatientFormModal({
       setForm({
         ...EMPTY_FORM,
         ...initialData,
+        // The API returns the photo as `photoFilePath` (a base64 data URL
+        // stored in that column); the form's internal field is
+        // `profilePhoto`. Map it explicitly here, otherwise the spread of
+        // `initialData` above leaves `profilePhoto` at its EMPTY_FORM value
+        // ("") and the avatar preview shows blank even when a photo exists.
+        profilePhoto: initialData.photoFilePath || "",
+        dateOfBirth: toDateInputValue(initialData.dateOfBirth),
+        policyValidTill: toDateInputValue(initialData.policyValidTill),
         knownAllergies: Array.isArray(initialData.knownAllergies)
           ? initialData.knownAllergies.join(", ")
           : initialData.knownAllergies || "",
@@ -293,16 +315,31 @@ export default function PatientFormModal({
     e.preventDefault();
     if (!validate()) return;
 
+    // Backend stores/returns knownAllergies and chronicConditions as plain
+    // comma-separated strings, not arrays. Sending an array causes the JSON
+    // deserialization to fail on the whole request. Just clean up stray
+    // commas/whitespace and send a string through.
+    const cleanCommaList = (value) =>
+      value
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .join(", ");
+
+    // The form tracks the photo internally as `profilePhoto`, but the API
+    // (CreatePatientDto / UpdatePatientDto) expects it as `photoFilePath`
+    // (stored as a base64 data URL in that column). Pull `profilePhoto`
+    // out of the spread and send it under the name the backend expects —
+    // otherwise it's silently dropped by model binding and the photo
+    // never saves.
+    const { profilePhoto, ...rest } = form;
+
     const payload = {
-      ...form,
-      knownAllergies: form.knownAllergies
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
-      chronicConditions: form.chronicConditions
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
+      ...rest,
+      photoFilePath: profilePhoto || null,
+      policyValidTill: form.policyValidTill || null,
+      knownAllergies: cleanCommaList(form.knownAllergies),
+      chronicConditions: cleanCommaList(form.chronicConditions),
     };
     onSave(payload);
   };
@@ -367,12 +404,10 @@ export default function PatientFormModal({
                 <span>
                   A patient with this {duplicateMatch.mobileNumber === form.mobileNumber ? "phone number" : "name and date of birth"} already
                   exists: <strong>{duplicateMatch.firstName} {duplicateMatch.lastName}</strong>
-                  {duplicateMatch.mrn ? ` (MRN ${duplicateMatch.mrn})` : ""}. Double check before saving a new record.
+                  {duplicateMatch.mrn || duplicateMatch.patientCode ? ` (MRN ${duplicateMatch.mrn || duplicateMatch.patientCode})` : ""}. Double check before saving a new record.
                 </span>
               </div>
             )}
-
-           
 
             {/* ── Photo ── */}
             <div className="app-section">
@@ -793,7 +828,8 @@ export default function PatientFormModal({
                 </div>
               </div>
             </div>
- {/* ── Administrative / System Fields ── */}
+
+            {/* ── Administrative / System Fields ── */}
             <div className="app-section">
               <div className="app-section-title">Administrative</div>
               <div className="app-form-grid">
@@ -802,7 +838,7 @@ export default function PatientFormModal({
                   <input
                     value={
                       mode === "edit"
-                        ? initialData?.mrn || "—"
+                        ? initialData?.patientCode || initialData?.mrn || "—"
                         : "Auto-generated on save"
                     }
                     readOnly

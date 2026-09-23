@@ -98,6 +98,10 @@ public class UpdatePatientDto
     public string? KnownAllergies { get; set; }
     public string? ChronicConditions { get; set; }
     public string? CurrentMedications { get; set; }
+    public string? Status { get; set; }
+    public string? PhotoFileName { get; set; }
+    public string? PhotoFilePath { get; set; }
+
 }
 
 /// <summary>
@@ -164,11 +168,10 @@ public class PatientResponseDto
 /// (error 50010) if every field is null - PatientService validates that
 /// up front so the API returns a clean 400 instead of a SQL error.
 /// </summary>
+
+
 public class PatientSearchRequestDto
 {
-    public int? PatientId { get; set; }
-    public string? FirstName { get; set; }
-    public string? LastName { get; set; }
-    public DateTime? DateOfBirth { get; set; }
-    public string? MobileNumber { get; set; }
+    public string? Query { get; set; }
+    public string? Status { get; set; }
 }

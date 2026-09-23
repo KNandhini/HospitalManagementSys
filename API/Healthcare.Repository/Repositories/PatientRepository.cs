@@ -62,35 +62,21 @@ public class PatientRepository : IPatientRepository
         }
     }
 
-    public async Task<IEnumerable<Patient>> SearchAsync(PatientSearchRequestDto request)
+    public async Task<IEnumerable<Patient>> SearchAsync(string? query, string? status)
     {
         try
         {
             using var c = _db.CreateConnection();
             return await c.QueryAsync<Patient>(
                 PatientStoredProcedures.Search,
-                new
-                {
-                    request.PatientId,
-                    request.FirstName,
-                    request.LastName,
-                    request.DateOfBirth,
-                    request.MobileNumber
-                },
+                new { Query = query, Status = status },
                 commandType: CommandType.StoredProcedure);
-        }
-        catch (SqlException ex) when (ex.Number == NoSearchCriteriaSupplied)
-        {
-            // Service-layer validation should catch this first; this is a backstop.
-            _logger.LogWarning("{Procedure} called with no filter criteria.", PatientStoredProcedures.Search);
-            throw;
         }
         catch (SqlException ex)
         {
             _logger.LogError(ex,
-                "SQL error in {Procedure} while searching patients. PatientId={PatientId}, FirstName={FirstName}, LastName={LastName}, DateOfBirth={DateOfBirth}, MobileNumber={MobileNumber}.",
-                PatientStoredProcedures.Search, request.PatientId, request.FirstName, request.LastName,
-                request.DateOfBirth, request.MobileNumber);
+                "SQL error in {Procedure} while searching patients. Query={Query}, Status={Status}.",
+                PatientStoredProcedures.Search, query, status);
             throw;
         }
     }
@@ -191,7 +177,10 @@ public class PatientRepository : IPatientRepository
                     dto.PayerType,
                     dto.KnownAllergies,
                     dto.ChronicConditions,
-                    dto.CurrentMedications
+                    dto.CurrentMedications,
+                    dto.Status,
+                    dto.PhotoFileName,      // ADD
+                    dto.PhotoFilePath       // ADD
                 },
                 commandType: CommandType.StoredProcedure);
 

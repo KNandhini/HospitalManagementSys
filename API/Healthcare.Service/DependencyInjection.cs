@@ -11,6 +11,7 @@ public static class DependencyInjection
         services.AddScoped<IDoctorService, DoctorService>();
         services.AddScoped<IAppointmentService, AppointmentService>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IDoctorScheduleService, DoctorScheduleService>();
         //services.AddAutoMapper(typeof(DoctorMappingProfile));
         return services;
     }

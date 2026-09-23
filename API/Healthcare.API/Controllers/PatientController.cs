@@ -141,20 +141,20 @@ public class PatientController : ControllerBase
         }
     }
 
-    // ============================================================
-    // SEARCH PATIENTS
-    // ============================================================
-    [HttpPost("search")]
-    public async Task<IActionResult> Search(PatientSearchRequestDto request)
+    [HttpGet("search")]
+    public async Task<IActionResult> Search([FromQuery] string? q, [FromQuery] string? status)
     {
         var sw = Stopwatch.StartNew();
+        _logger.LogInformation(
+            "API Request: GET /api/patient/search?q={Query}&status={Status} — TraceId={TraceId}",
+            q, status, HttpContext.TraceIdentifier);
 
         try
         {
-            var patients = await _service.SearchAsync(request);
+            var patients = await _service.SearchAsync(
+                new PatientSearchRequestDto { Query = q, Status = status });
 
             sw.Stop();
-
             return Ok(new
             {
                 success = true,
@@ -163,40 +163,14 @@ public class PatientController : ControllerBase
                 executionTimeMs = sw.ElapsedMilliseconds
             });
         }
-        catch (SqlException ex) when (ex.Number == NoSearchCriteriaSupplied)
-        {
-            sw.Stop();
-
-            return BadRequest(new
-            {
-                success = false,
-                message = "Please provide at least one search criteria.",
-                executionTimeMs = sw.ElapsedMilliseconds
-            });
-        }
         catch (SqlException ex)
         {
             sw.Stop();
-
             _logger.LogError(ex, "Error searching patients");
-
             return StatusCode(500, new
             {
                 success = false,
-                message = ex.Message,
-                executionTimeMs = sw.ElapsedMilliseconds
-            });
-        }
-        catch (Exception ex)
-        {
-            sw.Stop();
-
-            _logger.LogError(ex, "Unexpected error searching patients");
-
-            return StatusCode(500, new
-            {
-                success = false,
-                message = "An unexpected error occurred.",
+                message = "A database error occurred while searching patients.",
                 executionTimeMs = sw.ElapsedMilliseconds
             });
         }
@@ -212,8 +186,8 @@ public class PatientController : ControllerBase
         var sw = Stopwatch.StartNew();
 
         // Logged-in user only
-        var registeredBy = User.Identity?.Name;
-
+        //var registeredBy = User.Identity?.Name;
+        var registeredBy = "Admin";
         try
         {
             var created = await _service.CreateAsync(

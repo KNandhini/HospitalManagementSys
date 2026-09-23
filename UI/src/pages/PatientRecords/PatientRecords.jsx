@@ -1,58 +1,41 @@
 import { useEffect, useMemo, useState } from "react";
+import Swal from "sweetalert2";
 import {
   getPatients,
+  searchPatients,
   createPatient,
   updatePatient,
   deletePatient,
 } from "../../api/patientApi";
 import PatientFormModal from "./PatientFormModal";
-import ConfirmDialog from "../../components/common/ConfirmDialog";
+import { getErrorMessage } from "../../utils/getErrorMessage";
 // Styles come from the shared src/styles/common.css, imported once in main.jsx —
 // no page-specific stylesheet needed here.
 
-// Shown if the API call fails (e.g. backend not running yet) so the
-// screen is still demoable. Remove once the backend is wired up.
-const DEMO_PATIENTS = [
-  {
-    patientId: 1,
-    mrn: "IME-2026-000101",
-    firstName: "Ramesh",
-    lastName: "Kumar",
-    dateOfBirth: "1985-01-12",
-    gender: "Male",
-    mobileNumber: "9876543210",
-    city: "Chennai",
-    state: "Tamil Nadu",
-    bloodGroup: "B+",
-    status: "Active",
-  },
-  {
-    patientId: 2,
-    mrn: "IME-2026-000102",
-    firstName: "Priya",
-    lastName: "Sundaram",
-    dateOfBirth: "1992-06-24",
-    gender: "Female",
-    mobileNumber: "9876501234",
-    city: "Chennai",
-    state: "Tamil Nadu",
-    bloodGroup: "O+",
-    status: "Active",
-  },
-  {
-    patientId: 3,
-    mrn: "IME-2026-000103",
-    firstName: "Arun",
-    lastName: "Raj",
-    dateOfBirth: "1978-11-02",
-    gender: "Male",
-    mobileNumber: "9123456780",
-    city: "Coimbatore",
-    state: "Tamil Nadu",
-    bloodGroup: "A-",
-    status: "Inactive",
-  },
-];
+/**
+ * Always returns an array, no matter what the API actually sent back —
+ * a plain array, an envelope like { success, message, data: [...], executionTimeMs },
+ * { patients: [...] }, null, or a single object.
+ */
+function toArray(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.data)) return payload.data;
+  if (payload && Array.isArray(payload.patients)) return payload.patients;
+  if (payload && Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
+/**
+ * The API wraps every single-object response in { success, message, data,
+ * executionTimeMs }. This unwraps that envelope to get the actual patient
+ * object, while still tolerating an API that returns the patient directly.
+ */
+function unwrapPatient(payload) {
+  if (!payload) return null;
+  if (payload.patientId) return payload; // already unwrapped
+  if (payload.data && payload.data.patientId) return payload.data; // envelope
+  return payload.data || payload;
+}
 
 function calcAge(dob) {
   if (!dob) return "—";
@@ -77,7 +60,11 @@ function statusBadgeClass(status) {
 }
 
 export default function PatientRecords() {
+  // Master list — loaded once, used to reset instantly when filters clear.
+  const [allPatients, setAllPatients] = useState([]);
+  // Currently displayed list — either allPatients or a search result.
   const [patients, setPatients] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
@@ -89,19 +76,27 @@ export default function PatientRecords() {
   const [activePatient, setActivePatient] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deleting, setDeleting] = useState(false);
-
   const loadPatients = async () => {
     setLoading(true);
     setLoadError(false);
     try {
       const res = await getPatients();
-      setPatients(res.data || []);
+      const list = toArray(res?.data);
+      setAllPatients(list);
+      setPatients(list);
     } catch (err) {
-      console.warn("Could not load patients from API, showing demo data:", err?.message);
-      setPatients(DEMO_PATIENTS);
+      console.error("Could not load patients from API:", err);
+      // No demo-data fallback — show an empty list plus a clear error,
+      // so it's never ambiguous whether what's on screen is real data.
+      setAllPatients([]);
+      setPatients([]);
       setLoadError(true);
+      Swal.fire({
+        icon: "error",
+        title: "Couldn't load patients",
+        text: getErrorMessage(err, "Could not reach the server. Please try again."),
+        confirmButtonColor: "var(--color-primary, #12715A)",
+      });
     } finally {
       setLoading(false);
     }
@@ -111,19 +106,58 @@ export default function PatientRecords() {
     loadPatients();
   }, []);
 
+  // Debounced call to GET /patient/search whenever the search box or
+  // status filter changes — same pattern as DoctorRecords' searchDoctors.
+  // When every filter is cleared, reset instantly to the cached master
+  // list. On a search error, show the real error and fall back to
+  // filtering whatever real data is already in allPatients — never to
+  // hardcoded/demo data.
+  useEffect(() => {
+    const hasQuery = searchTerm.trim() || statusFilter;
+
+    if (!hasQuery) {
+      setPatients(allPatients);
+      setLoadError(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await searchPatients(searchTerm.trim(), statusFilter);
+        setPatients(toArray(res?.data));
+        setLoadError(false);
+      } catch (err) {
+        console.error("Patient search failed:", err);
+        setLoadError(true);
+        setPatients(allPatients);
+        Swal.fire({
+          icon: "error",
+          title: "Search failed",
+          text: getErrorMessage(err, "Could not reach the server. Showing the last loaded list."),
+          confirmButtonColor: "var(--color-primary, #12715A)",
+        });
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm, statusFilter, allPatients]);
+
+  // Client-side re-filter of the current `patients` list — safety net for
+  // the offline fallback path above, and covers the case where the search
+  // API doesn't filter by every field the search box matches on.
   const filtered = useMemo(() => {
-    let list = patients;
+    let list = Array.isArray(patients) ? patients : [];
     if (statusFilter) {
       list = list.filter((p) => p.status === statusFilter);
     }
     if (searchTerm.trim()) {
       const q = searchTerm.trim().toLowerCase();
       list = list.filter((p) => {
-        const fullName = `${p.firstName || ""} ${p.lastName || ""}`.toLowerCase();
+        const fullName = (p.fullName || `${p.firstName || ""} ${p.lastName || ""}`).toLowerCase();
         return (
           fullName.includes(q) ||
           (p.mobileNumber || "").includes(q) ||
-          (p.mrn || "").toLowerCase().includes(q) ||
+          (p.mrn || p.patientCode || "").toLowerCase().includes(q) ||
           (p.city || "").toLowerCase().includes(q)
         );
       });
@@ -132,11 +166,12 @@ export default function PatientRecords() {
   }, [patients, searchTerm, statusFilter]);
 
   const stats = useMemo(() => {
-    const total = patients.length;
-    const active = patients.filter((p) => p.status === "Active").length;
-    const inactive = patients.filter((p) => p.status === "Inactive").length;
+    const list = Array.isArray(allPatients) ? allPatients : [];
+    const total = list.length;
+    const active = list.filter((p) => p.status === "Active").length;
+    const inactive = list.filter((p) => p.status === "Inactive").length;
     return { total, active, inactive };
-  }, [patients]);
+  }, [allPatients]);
 
   const openCreate = () => {
     setModalMode("create");
@@ -155,44 +190,85 @@ export default function PatientRecords() {
     try {
       if (modalMode === "edit" && activePatient) {
         const res = await updatePatient(activePatient.patientId, formData);
-        setPatients((prev) =>
-          prev.map((p) =>
-            p.patientId === activePatient.patientId ? { ...p, ...formData, ...res?.data } : p
-          )
-        );
+        const updated = unwrapPatient(res?.data);
+        const merge = (p) =>
+          p.patientId === activePatient.patientId ? { ...p, ...formData, ...updated } : p;
+        setAllPatients((prev) => (Array.isArray(prev) ? prev : []).map(merge));
+        setPatients((prev) => (Array.isArray(prev) ? prev : []).map(merge));
       } else {
         const res = await createPatient(formData);
-        const created = res?.data || {
-          ...formData,
-          patientId: Date.now(),
-          mrn: `TEMP-${Date.now()}`,
-        };
-        setPatients((prev) => [created, ...prev]);
+        const created = unwrapPatient(res?.data);
+        if (!created) {
+          // No fabricated temp row — if the API didn't confirm the new
+          // patient, treat it as a failure rather than faking a record.
+          throw new Error("The server did not confirm the new patient was created.");
+        }
+        setAllPatients((prev) => [created, ...(Array.isArray(prev) ? prev : [])]);
+        setPatients((prev) => [created, ...(Array.isArray(prev) ? prev : [])]);
       }
       setModalOpen(false);
     } catch (err) {
       console.error("Save patient failed:", err);
-      alert(
-        err?.response?.data?.message ||
-          "Could not save the patient record. Please check the form and try again."
-      );
+      Swal.fire({
+        icon: "error",
+        title: "Couldn't save patient",
+        text: getErrorMessage(err, "Could not save the patient record. Please check the form and try again."),
+        confirmButtonColor: "var(--color-primary, #12715A)",
+      });
     } finally {
       setSaving(false);
     }
   };
 
-  const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
+  // Delete is a self-contained SweetAlert2 flow: confirm -> delete ->
+  // success toast, all triggered directly from the button click.
+  const handleDeleteClick = async (patient) => {
+    const displayName = patient.fullName || `${patient.firstName || ""} ${patient.lastName || ""}`.trim();
+    const code = patient.mrn || patient.patientCode;
+
+    const result = await Swal.fire({
+      icon: "warning",
+      title: "Delete patient record?",
+      html: `This will permanently remove <strong>${displayName}</strong> (${code}) from the system. This cannot be undone.`,
+      showCancelButton: true,
+      confirmButtonText: "Delete",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "var(--color-danger, #dc2626)",
+      cancelButtonColor: "var(--color-secondary, #6b7280)",
+      reverseButtons: true,
+      focusCancel: true,
+    });
+
+    if (!result.isConfirmed) return;
+
+    Swal.fire({
+      title: "Deleting…",
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      didOpen: () => Swal.showLoading(),
+    });
+
     try {
-      await deletePatient(deleteTarget.patientId);
-      setPatients((prev) => prev.filter((p) => p.patientId !== deleteTarget.patientId));
-      setDeleteTarget(null);
+      await deletePatient(patient.patientId);
+      const remove = (p) => p.patientId !== patient.patientId;
+      setAllPatients((prev) => (Array.isArray(prev) ? prev : []).filter(remove));
+      setPatients((prev) => (Array.isArray(prev) ? prev : []).filter(remove));
+      await Swal.fire({
+        icon: "success",
+        title: "Deleted",
+        text: `${displayName} has been removed.`,
+        confirmButtonColor: "var(--color-primary, #12715A)",
+        timer: 1800,
+        timerProgressBar: true,
+      });
     } catch (err) {
       console.error("Delete patient failed:", err);
-      alert(err?.response?.data?.message || "Could not delete this patient record.");
-    } finally {
-      setDeleting(false);
+      Swal.fire({
+        icon: "error",
+        title: "Couldn't delete patient",
+        text: getErrorMessage(err, "Could not delete this patient record."),
+        confirmButtonColor: "var(--color-primary, #12715A)",
+      });
     }
   };
 
@@ -207,16 +283,6 @@ export default function PatientRecords() {
           + New patient
         </button>
       </div>
-
-      {loadError && (
-        <div className="app-duplicate-warning" style={{ marginBottom: "1.25rem" }}>
-          <span>ℹ️</span>
-          <span>
-            Could not reach the patients API — showing sample data so you can preview the screen.
-            Connect the backend to see live records.
-          </span>
-        </div>
-      )}
 
       <div className="app-stats">
         <div className="app-stat-card">
@@ -256,6 +322,15 @@ export default function PatientRecords() {
 
       {loading ? (
         <div className="app-loading">Loading patient records…</div>
+      ) : loadError && filtered.length === 0 ? (
+        <div className="app-empty">
+          <div className="app-empty-icon">⚠️</div>
+          <h3>Couldn't load patients</h3>
+          <p>There was a problem reaching the server. Try again.</p>
+          <button className="btn btn-secondary" onClick={loadPatients} style={{ marginTop: 12 }}>
+            Retry
+          </button>
+        </div>
       ) : filtered.length === 0 ? (
         <div className="app-empty">
           <div className="app-empty-icon">🗂️</div>
@@ -286,9 +361,9 @@ export default function PatientRecords() {
                         <div className="app-avatar">{initials(p.firstName, p.lastName)}</div>
                         <div>
                           <div className="app-name-main">
-                            {p.firstName} {p.lastName}
+                            {p.fullName || `${p.firstName || ""} ${p.lastName || ""}`}
                           </div>
-                          <div className="app-name-sub">{p.mrn}</div>
+                          <div className="app-name-sub">{p.mrn || p.patientCode}</div>
                         </div>
                       </div>
                     </td>
@@ -306,7 +381,7 @@ export default function PatientRecords() {
                         </button>
                         <button
                           className="btn btn-secondary btn-icon"
-                          onClick={() => setDeleteTarget(p)}
+                          onClick={() => handleDeleteClick(p)}
                           aria-label="Delete"
                           style={{ color: "var(--color-danger)" }}
                         >
@@ -329,9 +404,9 @@ export default function PatientRecords() {
                     <div className="app-avatar">{initials(p.firstName, p.lastName)}</div>
                     <div>
                       <div className="app-name-main">
-                        {p.firstName} {p.lastName}
+                        {p.fullName || `${p.firstName || ""} ${p.lastName || ""}`}
                       </div>
-                      <div className="app-name-sub">{p.mrn}</div>
+                      <div className="app-name-sub">{p.mrn || p.patientCode}</div>
                     </div>
                   </div>
                   <span className={`badge ${statusBadgeClass(p.status)}`}>{p.status}</span>
@@ -361,7 +436,7 @@ export default function PatientRecords() {
                   <button
                     className="btn btn-secondary"
                     style={{ color: "var(--color-danger)" }}
-                    onClick={() => setDeleteTarget(p)}
+                    onClick={() => handleDeleteClick(p)}
                   >
                     Delete
                   </button>
@@ -376,24 +451,10 @@ export default function PatientRecords() {
         open={modalOpen}
         mode={modalMode}
         initialData={activePatient}
-        existingPatients={patients}
+        existingPatients={allPatients}
         saving={saving}
         onCancel={() => setModalOpen(false)}
         onSave={handleSave}
-      />
-
-      <ConfirmDialog
-        open={!!deleteTarget}
-        title="Delete patient record?"
-        message={
-          deleteTarget
-            ? `This will permanently remove ${deleteTarget.firstName} ${deleteTarget.lastName} (${deleteTarget.mrn}) from the system. This cannot be undone.`
-            : ""
-        }
-        confirmLabel="Delete"
-        loading={deleting}
-        onConfirm={confirmDelete}
-        onCancel={() => setDeleteTarget(null)}
       />
     </div>
   );

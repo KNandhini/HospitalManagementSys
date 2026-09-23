@@ -7,8 +7,7 @@ public interface IPatientRepository
 {
     Task<Patient?> GetByIdAsync(int patientId);
     Task<IEnumerable<Patient>> GetAllAsync();
-    Task<IEnumerable<Patient>> SearchAsync(PatientSearchRequestDto request);
-
+    Task<IEnumerable<Patient>> SearchAsync(string? query, string? status);
     /// <summary>Returns the new PatientId and the PatientCode allocated for it.</summary>
     Task<(int PatientId, string PatientCode)> CreateAsync(CreatePatientDto dto, string registeredBy);
 

@@ -15,9 +15,10 @@ public static class PatientStoredProcedures
     /// DateOfBirth, or MobileNumber), not a fixed "one patient's full
     /// details" lookup - despite the name. Exposed as Search here.
     /// </summary>
-    public const string Search = "sp_GetPatientDetails";
+   // public const string Search = "sp_GetPatientDetails";
 
     public const string Create = "sp_InsertPatient";
     public const string Update = "sp_UpdatePatient";
     public const string Delete = "sp_DeletePatient";
+    public const string Search = "sp_Patient_Search";
 }

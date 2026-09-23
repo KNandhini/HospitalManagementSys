@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom";
+/*import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
 const NAV_LINKS = [
@@ -6,6 +6,7 @@ const NAV_LINKS = [
   { to: "/appointments", label: "Appointments" },
   { to: "/patients", label: "Patients" },
   { to: "/doctors", label: "Doctors" },   // ← add this
+  { to: "/myschedule", label: "My Schedule" }, // ← add this
 ];
 
 export default function Navbar() {
@@ -96,3 +97,4 @@ export default function Navbar() {
     </nav>
   );
 }
+*/

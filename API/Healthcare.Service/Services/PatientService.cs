@@ -28,20 +28,15 @@ public class PatientService : IPatientService
         var patients = await _repo.GetAllAsync();
         return patients.Select(ToDto);
     }
-
     public async Task<IEnumerable<PatientResponseDto>> SearchAsync(PatientSearchRequestDto request)
     {
-        if (request.PatientId is null && request.FirstName is null && request.LastName is null
-            && request.DateOfBirth is null && request.MobileNumber is null)
-        {
-            throw new ArgumentException(
-                "Provide at least one of: PatientId, FirstName/LastName, DateOfBirth, or MobileNumber.");
-        }
+        _logger.LogInformation(
+            "PatientService.SearchAsync — Query={Query}, Status={Status}",
+            request.Query, request.Status);
 
-        var patients = await _repo.SearchAsync(request);
+        var patients = await _repo.SearchAsync(request.Query, request.Status);
         return patients.Select(ToDto);
     }
-
     public async Task<PatientResponseDto> CreateAsync(CreatePatientDto request, string registeredBy)
     {
         _logger.LogInformation(

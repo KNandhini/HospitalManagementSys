@@ -92,7 +92,7 @@ export default function DoctorRecords() {
   // No demo/hardcoded fallback — if the API call fails, the screen shows
   // a real empty state and the actual error, via a SweetAlert2 popup,
   // instead of quietly substituting fake data.
-  const loadDoctors = async () => {
+  /*const loadDoctors = async () => {
     setLoading(true);
     setLoadError(false);
     try {
@@ -114,7 +114,42 @@ export default function DoctorRecords() {
     } finally {
       setLoading(false);
     }
-  };
+  };*/
+  const loadDoctors = async () => {
+  setLoading(true);
+  setLoadError(false);
+
+  try {
+    const res = await getDoctors();
+
+    const normalized = normalizeDoctors(res.data);
+
+    setAllDoctors(normalized);
+    setDoctors(normalized);
+
+    // Store doctor ID
+   if (normalized.length > 0) {
+  localStorage.setItem("doctor", JSON.stringify(normalized[0]));
+}
+  } catch (err) {
+    console.error("Could not load doctors from API:", err);
+    setAllDoctors([]);
+    setDoctors([]);
+    setLoadError(true);
+
+    Swal.fire({
+      icon: "error",
+      title: "Couldn't load doctors",
+      text: getErrorMessage(
+        err,
+        "Could not reach the server. Please try again."
+      ),
+      confirmButtonColor: "var(--color-primary, #12715A)",
+    });
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     loadDoctors();

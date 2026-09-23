@@ -6,6 +6,7 @@ import Appointments from "../pages/Appointments/Appointments";
 import PatientRecords from "../pages/PatientRecords/PatientRecords";
 import ProtectedRoute from "../components/common/ProtectedRoute";
 import DoctorRecords from "../pages/DoctorRecords/DoctorRecords";
+import DoctorSchedulePage from "../pages/DoctorSchedule/DoctorSchedulePage";
 export default function AppRoutes() {
   return (
     <Routes>
@@ -30,6 +31,7 @@ export default function AppRoutes() {
       />
       <Route path="/patients" element={<PatientRecords />} />
       <Route path="/doctors" element={<DoctorRecords />} />
+      <Route path="/myschedule" element={<DoctorSchedulePage />} />
     </Routes>
   );
 }

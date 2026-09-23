@@ -19,3 +19,5 @@ export const updateDoctor = (id, data) =>
   axiosInstance.put(`/Doctor/${id}`, data);
 
 export const deleteDoctor = (id) => axiosInstance.delete(`/Doctor/${id}`);
+export const updateDoctorSchedule = (scheduleId, data) =>
+  axiosInstance.put(`/DoctorSchedule/${scheduleId}`, data);
