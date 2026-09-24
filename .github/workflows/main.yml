@@ -1,0 +1,44 @@
+name: Hospital Management API CI
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Display .NET Version
+        run: dotnet --version
+
+      - name: Restore Dependencies
+        run: dotnet restore API/HealthcareSolution.sln
+
+      - name: Build Solution
+        run: dotnet build API/HealthcareSolution.sln --configuration Release --no-restore
+
+      - name: Run Unit Tests
+        run: dotnet test API/Healthcare.Tests/Healthcare.Tests.csproj --configuration Release --no-build
+
+      - name: Publish API
+        run: dotnet publish API/Healthcare.API/Healthcare.API.csproj --configuration Release --no-build --output ./publish
+
+      - name: Upload Published API
+        uses: actions/upload-artifact@v4
+        with:
+          name: hospital-management-api
+          path: ./publish
